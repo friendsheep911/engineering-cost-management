@@ -643,10 +643,29 @@ def main():
             if id(t) not in used and t["type"] in ("compB", "gridB"):
                 # 整页全是"—"的空值延续页没有数据，跳过不提示
                 rowsrc = (t["parsed"]["rows"] if t["type"] == "compB" else t["rows"])
-                if any(ch.isdigit() for row in rowsrc
-                       for cell in (row or []) if cell
-                       for ch in str(cell)):
-                    issues.append(f"[需复核] {reg} p{t['pno']}：旧版式 B 页无配对 A 页")
+                if not any(ch.isdigit() for row in rowsrc
+                           for cell in (row or []) if cell
+                           for ch in str(cell)):
+                    continue
+                if t["type"] == "gridB":
+                    # 新版式（2024-3+）B 页：r0=县名行、r1=含税/除税行、无名称列，
+                    # 恰好命中旧版式 gridB 的判定而进 legacy_seq；但同表的 A 页
+                    # （r0 含"材料名称"）走 raw 路径，legacy 永远配不到 gridA。
+                    # 转成 raw 的"仅价格列"表插回 raw，参与 raw 的 A/B 配对
+                    # （行数相等硬校验 + 按行索引合并），如 2024-3+ 海西的
+                    # 都兰/乌兰/天峻/大柴旦行委、海东的民和/循化/化隆/互助等。
+                    hdr, bstart = split_header(t["rows"])
+                    cols, areas = build_cols(hdr, t["rows"][bstart:])
+                    if areas:
+                        raw.append({"page": t["pno"], "region": t["region"], "hint": "none",
+                                    "rows": t["rows"], "kind": None, "hasName": False,
+                                    "bodyStart": bstart, "cols": cols, "areas": areas,
+                                    "B": None})
+                        continue
+                issues.append(f"[需复核] {reg} p{t['pno']}：旧版式 B 页无配对 A 页")
+
+    # legacy gridB 转入 raw 后恢复页序（A/B 配对按列表序扫描）
+    raw.sort(key=lambda t: t["page"])
 
     # ---------- 2. A/B 列块配对（B 找同名列表中立、行数相等且尚未配对者）
     for reg in dict.fromkeys(t["region"] for t in raw):

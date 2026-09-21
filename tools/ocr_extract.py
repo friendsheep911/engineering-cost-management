@@ -37,6 +37,9 @@ import pymupdf                                                  # noqa: E402
 REGION_RE = re.compile(r"(西宁|海东|海西|黄南|海北|果洛|海南|玉树)\s*地区")
 NAME_KW = ("材料名称", "机械名称", "工种名称", "项目名称")
 SPEC_KW = ("型号规格", "强度等级", "规格")
+# 表题行标记：含「指导价/参考价」的行是表标题（如「材料指导价（除税价格）」），
+# 不是表头。若被吸进表头块，其「除税」字样会成为假 ptype 框，把所有价格列坍缩成一列。
+TITLE_RE = re.compile(r"指导价|参考价|价格信息|市场信息")
 ATTACH_RE = re.compile(r"价格指数|造价指标|指标分析|工程概况|消耗量指标|主要结构做法|附件\s*\d")
 COUNTY_SUFFIX = ("县", "市", "区", "镇", "行委")
 NUM_RE = re.compile(r"^-?[\d,.]+%?$")
@@ -133,6 +136,18 @@ def ocr_page(engine, page, dpi):
     return boxes
 
 
+HEAD_TOKS = ("含税价格", "除税价格", "含税", "除税", "（元", "(元", "单位", "备注",
+             "材料名称", "型号规格", "序号", "计量")
+
+
+def _is_head_tok(t):
+    """完整表头词短框（列头），相邻时禁止拼接，否则多列会被粘成一列。"""
+    t = (t or "").strip()
+    if not t or len(t) > 8:
+        return False
+    return any(t.startswith(w) or t.endswith(w) for w in HEAD_TOKS)
+
+
 def group_lines(boxes, y_tol=3.5):
     """按 y 中心聚类成行，行内按 x 排序；同行相邻盒子拼接。"""
     if not boxes:
@@ -157,8 +172,9 @@ def group_lines(boxes, y_tol=3.5):
         ln.sort(key=lambda b: b["x0"])
         merged = []
         for b in ln:
-            if merged and b["x0"] - merged[-1]["x1"] < 7:   # 同一逻辑框被拆开
-                m = merged[-1]
+            if merged and b["x0"] - merged[-1]["x1"] < 7 \
+                    and not (_is_head_tok(merged[-1]["text"]) and _is_head_tok(b["text"])):
+                m = merged[-1]                              # 同一逻辑框被拆开
                 m["x1"] = max(m["x1"], b["x1"])
                 m["text"] += b["text"]
             else:
@@ -269,8 +285,8 @@ class Table:
                 if c["role"] != "price":
                     continue
                 p = parse_price(g_col(c))
-                if not p:
-                    continue
+                if not p or p.get("num") is None:
+                    continue               # 无数字内容（(元)/表头残渣）不作价格
                 area = c["area"] or default_area
                 slot = next((q for q in prices if q["area"] == area), None)
                 if slot is None:
@@ -305,15 +321,18 @@ class Table:
         return out
 
 
-def build_table(lines, hi, region, kind):
-    """从表头行 hi 开始构建 Table；失败返回 None。"""
+def _header_block(lines, hi):
+    """表头块收集：anchor + 向上紧邻的「含税/除税」价格行或县名行 +
+    向下紧邻的「（元）/县名」等表头行。返回 (block, body起始行号)。"""
     anchor = lines[hi]
-    # 表头块 = 向上紧邻的「含税/除税」价格行 + anchor + 向下紧邻的「（元）/县名」等表头行
     block = [anchor]
     k = hi - 1
     while k >= 0:
         t = lines[k]["text"]
-        if ("含税" in t or "除税" in t) and not any(x in t for x in NAME_KW):
+        n_county = sum(1 for b in lines[k]["boxes"] if is_county_text(b["text"]))
+        if (not TITLE_RE.search(t)) \
+                and ((("含税" in t or "除税" in t) and not any(x in t for x in NAME_KW)) \
+                     or n_county >= 2):   # 含税/除税行，或县名行（在「材料名称」行上方）
             block.insert(0, lines[k])
             k -= 1
         else:
@@ -338,10 +357,15 @@ def build_table(lines, hi, region, kind):
         j += 1
         if len(block) >= 6:
             break
-    body = lines[j:]
+    return block, j
+
+
+def build_table(lines, hi, region, kind, pno=None):
+    """从表头行 hi 开始构建 Table；失败返回 None。"""
+    block, j = _header_block(lines, hi)
     # 过滤数据区里的页码/脚注
     notes, data_lines = [], []
-    for l in body:
+    for l in lines[j:]:
         t = l["text"]
         if PAGE_NO_RE.match(t):
             continue
@@ -356,6 +380,8 @@ def build_table(lines, hi, region, kind):
     ptype_boxes = [b for l in block for b in l["boxes"]
                    if "含税" in b["text"] or "除税" in b["text"]]
     county_boxes = [b for l in block for b in l["boxes"] if is_county_text(b["text"])]
+    if pno is not None:
+        county_boxes = graft_counties(county_boxes, region, kind, pno)
     anchor_boxes = [b for l in block for b in l["boxes"]]
     cols = []
 
@@ -373,15 +399,19 @@ def build_table(lines, hi, region, kind):
         px1 = max(b["x1"] for b in ptype_boxes)
         # 价格列：每个含税/除税框一列，县名按 x 归属
         def county_at(x):
-            cur = None
-            for cb in sorted(county_boxes, key=lambda b: b["x0"]):
-                if cb["x0"] <= x:
-                    cur = cb["text"]
-            return cur
+            if not county_boxes:
+                return None                 # 单地区表（无县名行）：交由 default_area
+            cb = min(county_boxes, key=lambda b: abs((b["x0"] + b["x1"]) / 2 - x))
+            if abs((cb["x0"] + cb["x1"]) / 2 - x) > 45:
+                return _COUNTY_DROP         # 孤立价格列（县名 OCR 漏检）：标记丢弃
+            return cb["text"]
         for b in sorted(ptype_boxes, key=lambda b: b["x0"]):
             cx = (b["x0"] + b["x1"]) / 2
+            a = county_at(cx)
+            if a == _COUNTY_DROP:
+                continue                    # 县名无法归属的列：丢弃，防价格错挂到别的县
             add_col(b["x0"], b["x1"], "price",
-                    area=county_at(cx), ptype="excl" if "除税" in b["text"] else "incl")
+                    area=a, ptype="excl" if "除税" in b["text"] else "incl")
         # 标签列：价格区之外的 anchor 框
         for b in anchor_boxes:
             t = b["text"]
@@ -421,6 +451,16 @@ def build_table(lines, hi, region, kind):
                 add_col(b["x0"], b["x1"], "price", area=t, ptype="incl")
             else:
                 add_col(b["x0"], b["x1"], "price", ptype="incl")
+        # 兄弟页借入的县名框（本页 OCR 漏检县名）：本页 anchor 无此框，需补建价格列
+        for b in county_boxes:
+            t = b["text"]
+            if not is_county_text(t):
+                continue
+            if any(overlap(b["x0"], b["x1"], c["x0"], c["x1"]) /
+                   max(1e-6, min(b["x1"] - b["x0"], c["x1"] - c["x0"])) > 0.5
+                   for c in cols):
+                continue                        # 本页已检测到，列已建
+            add_col(b["x0"], b["x1"], "price", area=t, ptype="incl")
     cols.sort(key=lambda c: c["x0"])
     for i, c in enumerate(cols):
         c["cid"] = str(i)
@@ -436,7 +476,7 @@ def build_table(lines, hi, region, kind):
             cut = k
             break
     data_lines = [l for l in data_lines if l["y"] < (lines[cut]["y"] if cut < len(lines) else 10 ** 9)]
-    return Table(region, kind, anchor["y"], cols, data_lines, notes)
+    return Table(region, kind, lines[hi]["y"], cols, data_lines, notes)
 
 
 def find_price_header(lines):
@@ -452,17 +492,52 @@ def find_price_header(lines):
 LABEL_ROLES = (("名称", "name"), ("型号", "spec"), ("规格", "spec"),
                ("单位", "unit"), ("备注", "note"))
 
+_COUNTY_DROP = "\x00DROP"       # county_at 哨兵：列中心距最近县名过远，整列丢弃
 
-def build_county_table(lines, hi, region, kind):
+# ---- 跨页县名框互补 --------------------------------------------------------
+# 同一张表的相邻页版式一致（如海西 A 页=德令哈+乌兰、B 页=都兰..茫崖）。某页 OCR
+# 漏检/误识县名框时，从「同 region+kind 且存在同名县且 x0 一致(±10pt)」的兄弟页
+# 借入缺失的县名框，避免其价格列因无法归属而被丢弃。
+_COUNTY_MEM = []                # [(region, kind, pno, [box, ...])]
+
+
+def remember_counties(boxes, region, kind, pno):
+    if boxes:
+        _COUNTY_MEM.append((region, kind, pno, [dict(b) for b in boxes]))
+
+
+def graft_counties(own, region, kind, pno):
+    if not own:
+        return own
+    merged = list(own)
+    for rg, kd, sp, sib in _COUNTY_MEM:
+        if rg != region or kd != kind or sp == pno:
+            continue
+        # 锚定：兄弟页与当前页至少有一个同名县且 x0 相近，才视为同一版式系列
+        if not any(s["text"] == o["text"] and abs(s["x0"] - o["x0"]) <= 10
+                   for s in sib for o in own):
+            continue
+        for s in sib:
+            if s["text"] not in {o["text"] for o in merged} \
+                    and all(abs(s["x0"] - o["x0"]) > 10 for o in merged):
+                merged.append(dict(s))
+    return merged
+
+
+def build_county_table(lines, hi, region, kind, pno=None):
     """宽松县名列表：县名行 ± 含税/除税行 ± 标签行（名称/型号/单位）。
 
     有名称列 → 机械台班/劳务等独立新表；无名称列 → 左页表的右半页（仅价格列）。
     """
     county_boxes = [b for b in lines[hi]["boxes"] if is_county_text(b["text"])]
+    if pno is not None:
+        county_boxes = graft_counties(county_boxes, region, kind, pno)
     if len(county_boxes) < 2:
         return None
 
     def headlike_line(t):
+        if TITLE_RE.search(t):              # 表题行（含「指导价」等）不是表头
+            return False
         return ("含税" in t or "除税" in t
                 or any(kw in t for kw, _ in LABEL_ROLES)
                 or re.match(r"^[（(]\s*元\s*[)）]", t.strip())
@@ -507,15 +582,19 @@ def build_county_table(lines, hi, region, kind):
 
     if ptype_boxes:
         def county_at(x):
-            cur = None
-            for cb in sorted(county_boxes, key=lambda b: b["x0"]):
-                if cb["x0"] <= x:
-                    cur = cb["text"]
-            return cur
+            if not county_boxes:
+                return None                 # 单地区表（无县名行）：交由 default_area
+            cb = min(county_boxes, key=lambda b: abs((b["x0"] + b["x1"]) / 2 - x))
+            if abs((cb["x0"] + cb["x1"]) / 2 - x) > 45:
+                return _COUNTY_DROP         # 孤立价格列（县名 OCR 漏检）：标记丢弃
+            return cb["text"]
         for b in sorted(ptype_boxes, key=lambda b: b["x0"]):
             cx = (b["x0"] + b["x1"]) / 2
+            a = county_at(cx)
+            if a == _COUNTY_DROP:
+                continue                    # 县名无法归属的列：丢弃，防价格错挂到别的县
             add_col(b["x0"], b["x1"], "price",
-                    area=county_at(cx), ptype="excl" if "除税" in b["text"] else "incl")
+                    area=a, ptype="excl" if "除税" in b["text"] else "incl")
     else:
         for cb in sorted(county_boxes, key=lambda b: b["x0"]):
             add_col(cb["x0"], cb["x1"], "price", area=cb["text"], ptype="incl")
@@ -724,6 +803,29 @@ def main():
     issue_key = re.sub(r"[^\w\u4e00-\u9fa5-]", "_", period)
     print(f"期号: {period}（总第{issue_no}期）  发布: {pub}")
 
+    # ---- 预扫描：登记各页表头的县名框（供跨页互补 OCR 漏检县名）
+    _reg0 = ""
+    for pno in range(lo, hi + 1):
+        lines = all_lines.get(pno) or []
+        if not lines:
+            continue
+        page_text = " ".join(l["text"] for l in lines)
+        if ATTACH_RE.search(page_text) and not REGION_RE.search(page_text):
+            continue
+        rm = REGION_RE.search(page_text)
+        if rm:
+            _reg0 = rm.group(1) + "地区"
+        h = find_header(lines)
+        if h is not None:
+            cbs = [b for l in _header_block(lines, h)[0] for b in l["boxes"]
+                   if is_county_text(b["text"])]
+            remember_counties(cbs, _reg0, kind_from_lines(lines[:h]), pno)
+        else:
+            r = find_price_header(lines)
+            if r is not None:
+                cbs = [b for b in lines[r]["boxes"] if is_county_text(b["text"])]
+                remember_counties(cbs, _reg0, kind_from_lines(lines[:r]), pno)
+
     # ---- 逐页解析表格（含续页复用上一页列定义、右半页价格合并）
     logic, cur_region = [], ""
     last_cols = last_kind = last_region = None
@@ -741,7 +843,7 @@ def main():
         right_idx = find_price_header(lines) if hi_idx is None else None
         if hi_idx is not None:
             kind = kind_from_lines(lines[:hi_idx])
-            tb = build_table(lines, hi_idx, cur_region, kind)
+            tb = build_table(lines, hi_idx, cur_region, kind, pno=pno)
             if tb:
                 last_cols, last_kind, last_region = tb.cols, tb.kind, cur_region
                 raw = tb.items(cur_region, raw=True)
@@ -751,7 +853,7 @@ def main():
                                   "notes": list(dict.fromkeys(tb.notes))})
         elif right_idx is not None:
             tb_r = build_county_table(lines, right_idx, cur_region,
-                                      last_kind or "material")
+                                      last_kind or "material", pno=pno)
             if tb_r and any(c["role"] == "name" for c in tb_r.cols):
                 # 宽松表头新表（机械台班/劳务等）：作为独立条目
                 kind = kind_from_lines(lines[:right_idx])
