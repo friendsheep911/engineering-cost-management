@@ -44,6 +44,8 @@ ATTACH_RE = re.compile(r"价格指数|造价指标|指标分析|工程概况|消
 COUNTY_SUFFIX = ("县", "市", "区", "镇", "行委")
 NUM_RE = re.compile(r"^-?[\d,.]+%?$")
 PAGE_NO_RE = re.compile(r"^[·•\-\s]*\d{1,3}[\s·•\-]*$")
+# OCR 县名混淆字修正（观测：2024-6 劳务表「天峻」→「天骏」）
+_OCR_COUNTY_FIX = {"天骏": "天峻"}
 
 TYPE_LABEL = {"material": "材料指导价", "mortar": "干混砂浆", "green": "绿色建材",
               "labor": "劳务价格", "machine": "机械台班"}
@@ -110,6 +112,9 @@ def is_county_text(t):
     base = re.sub(r"[（(][^）)]*[）)]?", "", t)      # 去掉（含西海镇）等括注
     if not base:
         return False
+    base = _OCR_COUNTY_FIX.get(base, base)          # OCR 常见混淆字修正
+    if base.endswith("地区"):                        # 「海西地区」等地区名不是县名
+        return False                                  # （防伪列：表头碎片拼接出 XX地区）
     if base.endswith(COUNTY_SUFFIX):
         return True
     return base in ("尖扎", "同仁", "泽库", "河南", "德令哈", "乌兰", "都兰", "天峻",
@@ -117,6 +122,13 @@ def is_county_text(t):
                     "久治", "玛多", "称多", "囊谦", "杂多", "治多", "曲麻莱", "共和",
                     "贵德", "贵南", "同德", "兴海", "民和", "互助", "化隆", "循化",
                     "乐都", "平安", "西宁", "海晏", "祁连", "门源", "刚察", "玉树")
+
+
+def norm_county(t):
+    """县名规范化：应用 OCR 混淆修正（add_col(area=...) 处必须用它挂列名）。"""
+    t = (t or "").strip()
+    base = re.sub(r"[（(][^）)]*[）)]?", "", t)
+    return _OCR_COUNTY_FIX.get(base, t) if base else t
 
 
 def ocr_page(engine, page, dpi):
@@ -327,16 +339,29 @@ def _header_block(lines, hi):
     anchor = lines[hi]
     block = [anchor]
     k = hi - 1
+    skipped_frag = 0
     while k >= 0:
         t = lines[k]["text"]
         n_county = sum(1 for b in lines[k]["boxes"] if is_county_text(b["text"]))
         if (not TITLE_RE.search(t)) \
                 and ((("含税" in t or "除税" in t) and not any(x in t for x in NAME_KW)) \
-                     or n_county >= 2):   # 含税/除税行，或县名行（在「材料名称」行上方）
+                     or n_county >= 1):   # 含税/除税行，或县名行（≥1 个县名框：
+            # 黄南等「一页一县」版式的县名行只有 1 框，条件 ≥2 会漏收）
             block.insert(0, lines[k])
             k -= 1
-        else:
-            break
+            skipped_frag = 0
+            continue
+        # OCR 碎片行（如「单位」竖排被拆出的单字「单」）：跳过后县名行仍可入块。
+        # 不跳过会让县名行留在块外 → 价格列全部 area=None → 塌缩成地区伪列
+        # （2024-1/2/6 海西「海西地区」列的根因）。
+        frag = (n_county == 0 and not TITLE_RE.search(t)
+                and len(t.strip()) <= 2 and not re.search(r"\d", t)
+                and "含税" not in t and "除税" not in t)
+        if frag and skipped_frag == 0 and abs(lines[hi]["y"] - lines[k]["y"]) < 25:
+            skipped_frag += 1
+            k -= 1
+            continue
+        break
     j = hi + 1
     while j < len(lines):
         t = lines[j]["text"]
@@ -404,7 +429,7 @@ def build_table(lines, hi, region, kind, pno=None):
             cb = min(county_boxes, key=lambda b: abs((b["x0"] + b["x1"]) / 2 - x))
             if abs((cb["x0"] + cb["x1"]) / 2 - x) > 45:
                 return _COUNTY_DROP         # 孤立价格列（县名 OCR 漏检）：标记丢弃
-            return cb["text"]
+            return norm_county(cb["text"])
         for b in sorted(ptype_boxes, key=lambda b: b["x0"]):
             cx = (b["x0"] + b["x1"]) / 2
             a = county_at(cx)
@@ -412,6 +437,12 @@ def build_table(lines, hi, region, kind, pno=None):
                 continue                    # 县名无法归属的列：丢弃，防价格错挂到别的县
             add_col(b["x0"], b["x1"], "price",
                     area=a, ptype="excl" if "除税" in b["text"] else "incl")
+        # 防线：表头块无县名行时 price 列 area=None，items 里会全部塌缩到
+        # default_area（地区名）且同 slot 互相覆盖（2024-1/2/6 海西伪列成因）。
+        # 多价格列（≥3）+ 无县名行 = 县名行漏检，宁缺毋假：丢弃价格列。
+        if not county_boxes and sum(1 for c in cols if c["role"] == "price") >= 3:
+            print(f"  [警告] p{pno} 表头无县名行但价格列≥3，防塌缩丢弃价格列")
+            cols = [c for c in cols if c["role"] != "price"]
         # 标签列：价格区之外的 anchor 框
         for b in anchor_boxes:
             t = b["text"]
@@ -431,7 +462,8 @@ def build_table(lines, hi, region, kind, pno=None):
             t = b["text"]
             if any(k in t for k in NAME_KW):
                 add_col(b["x0"], b["x1"], "name")
-            elif any(k in t for k in SPEC_KW):
+            elif any(k in t or (len(t.strip()) >= 2 and t in k) for k in SPEC_KW):
+                # t in k：「型号」是「型号规格」被 OCR 拆开的碎片，也归规格列
                 add_col(b["x0"], b["x1"], "spec")
             elif "单位" in t:
                 add_col(b["x0"], b["x1"], "unit")
@@ -448,7 +480,10 @@ def build_table(lines, hi, region, kind, pno=None):
             if is_county_text(t) and len(cols) == 0:
                 continue
             if is_county_text(t):
-                add_col(b["x0"], b["x1"], "price", area=t, ptype="incl")
+                add_col(b["x0"], b["x1"], "price", area=norm_county(t), ptype="incl")
+            elif len(t.strip()) <= 2 and not re.search(r"\d", t):
+                continue    # 表头碎片（如「序号」竖排的「号」）：不作价格列，
+                            # 否则 area=None 塌缩成地区伪列（序号数字被当价格）
             else:
                 add_col(b["x0"], b["x1"], "price", ptype="incl")
         # 兄弟页借入的县名框（本页 OCR 漏检县名）：本页 anchor 无此框，需补建价格列
@@ -460,7 +495,13 @@ def build_table(lines, hi, region, kind, pno=None):
                    max(1e-6, min(b["x1"] - b["x0"], c["x1"] - c["x0"])) > 0.5
                    for c in cols):
                 continue                        # 本页已检测到，列已建
-            add_col(b["x0"], b["x1"], "price", area=t, ptype="incl")
+            add_col(b["x0"], b["x1"], "price", area=norm_county(t), ptype="incl")
+        # 防线2：无任何县名价格列、且匿名价格列 ≥2 → 非地区价格表（如文件附表
+        # 「原价格/调整后价格」页，region 是目录页残留值）：拒绝建表
+        if len([c for c in cols if c["role"] == "price" and c["area"] is None]) >= 2 \
+                and not any(c["role"] == "price" and c["area"] for c in cols):
+            print(f"  [警告] p{pno} 无县名且匿名价格列≥2，拒绝（疑似文件附表）")
+            return None
     cols.sort(key=lambda c: c["x0"])
     for i, c in enumerate(cols):
         c["cid"] = str(i)
@@ -587,7 +628,7 @@ def build_county_table(lines, hi, region, kind, pno=None):
             cb = min(county_boxes, key=lambda b: abs((b["x0"] + b["x1"]) / 2 - x))
             if abs((cb["x0"] + cb["x1"]) / 2 - x) > 45:
                 return _COUNTY_DROP         # 孤立价格列（县名 OCR 漏检）：标记丢弃
-            return cb["text"]
+            return norm_county(cb["text"])
         for b in sorted(ptype_boxes, key=lambda b: b["x0"]):
             cx = (b["x0"] + b["x1"]) / 2
             a = county_at(cx)
@@ -597,7 +638,7 @@ def build_county_table(lines, hi, region, kind, pno=None):
                     area=a, ptype="excl" if "除税" in b["text"] else "incl")
     else:
         for cb in sorted(county_boxes, key=lambda b: b["x0"]):
-            add_col(cb["x0"], cb["x1"], "price", area=cb["text"], ptype="incl")
+            add_col(cb["x0"], cb["x1"], "price", area=norm_county(cb["text"]), ptype="incl")
     priced = [c for c in cols if c["role"] == "price"]
     pspan = ((min(c["x0"] for c in priced), max(c["x1"] for c in priced))
              if priced else (0, 0))

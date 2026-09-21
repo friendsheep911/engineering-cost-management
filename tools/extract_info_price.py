@@ -45,6 +45,19 @@ except ImportError:
 import pymupdf
 
 REGION_RE = re.compile(r"(西宁|海东|海西|黄南|海北|果洛|海南|玉树)地区")
+
+# 原件印刷县名错误修正（观测：2020-2 p116 劳务表「天峻」误印为「天骏」，
+# 其余各页均为「天峻」）。与 ocr_extract.py 的 _OCR_COUNTY_FIX 保持一致。
+_COUNTY_FIX = {"天骏": "天峻"}
+
+
+def norm_county(t):
+    """县名归一化：剥括注、套印刷错误修正。"""
+    t = (t or "").strip()
+    base = re.sub(r"[（(][^）)]*[）)]?", "", t).strip()
+    if not base:
+        return t
+    return _COUNTY_FIX.get(base, base)
 NOTE_RE = re.compile(r"^\s*(注|备注|说明)\s*[:：]")
 NUM_RE = re.compile(r"^-?[\d,]+(?:\.\d+)?$")
 
@@ -159,7 +172,7 @@ def build_cols(header_rows, tail_rows):
         cur = ""
         for i, c in enumerate(r0):
             if c:
-                cur = c
+                cur = norm_county(c)
             sub = r1[i] if i < len(r1) else ""
             p = "incl" if "含税" in sub else ("excl" if "除税" in sub else None)
             cols.append({"head": c or sub, "area": cur if p else None, "price": p})
@@ -170,7 +183,7 @@ def build_cols(header_rows, tail_rows):
         for i, c in enumerate(r0):
             a = r1[i] if i < len(r1) else ""
             if a and not NUM_RE.match(a):
-                cur = a
+                cur = norm_county(a)
             sub = r2[i] if i < len(r2) else ""
             p = "incl" if "含税" in sub else ("excl" if "除税" in sub else None)
             if p:
@@ -182,7 +195,7 @@ def build_cols(header_rows, tail_rows):
         for i, c in enumerate(r0):
             area = r1[i] if i < len(r1) else ""
             if area and not NUM_RE.match(area):
-                cols.append({"head": c or area, "area": area, "price": "incl"})
+                cols.append({"head": c or area, "area": norm_county(area), "price": "incl"})
             else:
                 cols.append({"head": c, "area": None, "price": None})
     else:

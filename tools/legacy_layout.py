@@ -79,6 +79,34 @@ def parse_compressed(page, tb):
                 col_lines[i].append((y, clean(text)))
                 break
 
+    # 列内双价格拼接拆分：如 2020-2 海西泵送混凝土段，乌兰价带「(茶卡398)」
+    # 括注，同一印刷行的两个价格词同 (blk,ln) 拼成一行且行首 x 落在左价格列
+    # （"350.00350(茶卡398)"）。按「价格+带括注价格」特征拆开，主价归还右邻
+    # 列；括注为镇级参考价（模型无法表达），剥除。
+    # group(1) 限定「整数部分+两位小数」完整价格形态，避免贪婪回溯错拆：
+    # '350.00350(茶卡398)' → '350.00' + '350(茶卡398)'；'60.00（茶卡）'
+    # （括注内无价）不匹配，不误拆。
+    SPLIT2_RE = re.compile(r"^(\d[\d,]*\.\d{2})(\d+[(（][^)）]*[)）])$")
+    for i in range(n_cols - 1):
+        out, extra, hit = [], [], False
+        for y, t in col_lines[i]:
+            m = SPLIT2_RE.match(t)
+            # 右列该行已有数字则不拆（拼接未发生，防止破坏正常行）
+            if m and any(NUM_RE.match(rt) for ry, rt in col_lines[i + 1]
+                         if abs(ry - y) < 3):
+                m = None
+            if m:
+                hit = True
+                out.append((y, m.group(1)))
+                m2 = re.match(r"^[\d,.]+", m.group(2))
+                extra.append((y, m2.group(0)))
+            else:
+                out.append((y, t))
+        if hit:
+            col_lines[i] = out
+            col_lines[i + 1].extend(extra)
+            col_lines[i + 1].sort()
+
     # 每列的数值行 y（供角色判定与行带生成）
     col_num_ys = [[y for y, t in col_lines[i] if NUM_RE.match(t)]
                   for i in range(n_cols)]
@@ -88,7 +116,11 @@ def parse_compressed(page, tb):
     for i in range(n_cols):
         own_first = col_num_ys[i][0] if col_num_ys[i] else None
         cut = (own_first - 2) if own_first is not None else None
-        hs = [t for y, t in col_lines[i] if cut is not None and y < cut and t]
+        # hs 过滤含数字的行：数据价格若因拼接/错位落入表头区，会把
+        # joined 污染成 "德令哈350.00…"，_area_ok 拒绝后 area=None →
+        # 塌缩成地区伪列（2020-2~2022-3 海西「海西地区」列成因）
+        hs = [t for y, t in col_lines[i]
+              if cut is not None and y < cut and t and not re.search(r"\d", t)]
         joined = clean("".join(hs))
         if "材料名称" in joined or "机械名称" in joined or "工种名称" in joined or "项目名称" in joined:
             cols.append({"role": "name", "area": None, "ptype": None})
@@ -137,7 +169,8 @@ def parse_compressed(page, tb):
         for i, c in enumerate(cols):
             if c["role"] != "?":
                 continue
-            hs = [t for y, t in col_lines[i] if y < prov - 2 and t]
+            hs = [t for y, t in col_lines[i]
+                  if y < prov - 2 and t and not re.search(r"\d", t)]
             if any("含税" in h for h in hs):
                 c.update({"role": "price", "area": _area_of(hs), "ptype": "incl"})
             elif any("除税" in h for h in hs):
