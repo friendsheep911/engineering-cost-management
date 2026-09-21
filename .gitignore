@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# OCR 逐页缓存（体积大，可由 ocr_extract.py 自动重建）
+data/_ocr_cache/
+
+# 临时与备份
+tmp/
+*.bak
+*.bak.*
+data/index.json.bak*
+
+# 抽取报告为生成物，但保留（便于核对）——如需忽略可取消下一行注释
+# data/_report.txt

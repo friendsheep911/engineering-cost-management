@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>青海工程造价管理信息 · 信息价查询</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">青</div>
+    <div class="brand-txt">
+      <h1>青海工程造价管理信息</h1>
+      <p>建设工程材料 / 砂浆 / 劳务 / 机械台班 价格查询</p>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <div class="viewtabs" id="viewTabs">
+      <button data-view="issue" class="on">当期查询</button>
+      <button data-view="trend">历史趋势</button>
+    </div>
+    <label class="field" id="issueField">
+      <span>期数</span>
+      <select id="issueSelect"></select>
+    </label>
+    <button id="btnExport" class="btn">导出 CSV</button>
+    <button id="btnPrint" class="btn ghost">打印</button>
+  </div>
+</header>
+
+<section class="controlbar" id="controlbar">
+  <div class="row">
+    <span class="row-label">地区</span>
+    <div id="regionChips" class="chips"></div>
+  </div>
+  <div class="row">
+    <span class="row-label">类型</span>
+    <div id="kindChips" class="chips"></div>
+  </div>
+  <div class="row tools">
+    <div class="search">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M10 4a6 6 0 1 0 3.7 10.7l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8z"/></svg>
+      <input id="searchInput" type="search" placeholder="搜索材料名称 / 型号规格 / 备注…">
+    </div>
+    <div class="seg" id="modeSeg" role="group" aria-label="含税口径">
+      <button data-mode="incl" class="on">含税价</button>
+      <button data-mode="excl">除税价</button>
+      <button data-mode="both">两者</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="collapseGroups"><span>折叠分组</span></label>
+    <div class="spacer"></div>
+    <div class="stat" id="stat"></div>
+  </div>
+</section>
+
+<section class="controlbar" id="trendBar" hidden>
+  <div class="row tools">
+    <div class="search trend-search">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" d="M10 4a6 6 0 1 0 3.7 10.7l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8z"/></svg>
+      <input id="trendInput" type="search" placeholder="输入材料名 / 规格搜索，如：钢筋、C30、挖土机…" autocomplete="off">
+      <div id="trendSug" class="sug" hidden></div>
+    </div>
+    <div class="stat" id="trendStat"></div>
+  </div>
+</section>
+
+<main id="content" class="content">
+  <div class="placeholder">正在加载数据…</div>
+</main>
+
+<main id="trendView" class="content" hidden>
+  <div class="placeholder">在上方搜索材料名称，查看其 2020 年以来的价格走势。<br>例如：螺纹钢、C30 混凝土、塔式起重机…</div>
+</main>
+
+<footer class="foot">
+  <span id="footMeta"></span>
+  <span class="foot-hint">数据由 PDF 自动抽取，仅供查询参考；正式计价请以原刊及其勘误为准。</span>
+</footer>
+
+<script src="assets/chart.umd.min.js"></script>
+<script src="data/index.js"></script>
+<script src="assets/app.js"></script>
+<script src="assets/trend.js"></script>
+</body>
+</html>
