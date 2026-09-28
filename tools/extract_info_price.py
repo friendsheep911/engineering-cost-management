@@ -778,6 +778,52 @@ def main():
             for p in it["prices"]:
                 p["area"] = canon_area(p["area"], l["region"])
 
+    # ---------- 3c. 平行双表行级配对
+    # 同页出现两个「都带名称列」的同结构表时（例：黄南 p117 上表=尖扎/同仁、下表=泽库/河南），
+    # 因两表均有名称列，不满足 A/B 配对条件（B 页必须无名称列）→ 各自独立成表，
+    # 章节合并时被顺序拼接 → 同一批材料重复成两段、每行只有 2 个地区、
+    # areas 却取并集（4 县）→ 前端"县不全 + 材料重复"。
+    # 判定为同一批材料的分列表：行数相等 + 逐行(名称,型号,单位)全同 + 地区列互不相交，
+    # 然后按行索引把价格为并成一行多地区。
+    def _rowkey(it):
+        return (clean(it.get("name", "")), clean(it.get("spec", "")), clean(it.get("unit", "")))
+
+    drop = set()
+    for i, a in enumerate(logic):
+        if i in drop or a["kind"] == "indicator":
+            continue
+        for j in range(i + 1, len(logic)):
+            if j in drop:
+                continue
+            b = logic[j]
+            if a["region"] != b["region"] or a["kind"] != b["kind"]:
+                continue
+            if not a["items"] or len(a["items"]) != len(b["items"]):
+                continue
+            # 两侧都必须含价格行：排除"取费/费率表"这类无价格表被 kind 误判为材料表的情况
+            if not any(x["prices"] for x in a["items"]) or not any(x["prices"] for x in b["items"]):
+                continue
+            if set(a["areas"]) & set(b["areas"]):      # 地区列必须互不相交
+                continue
+            if [_rowkey(x) for x in a["items"]] != [_rowkey(x) for x in b["items"]]:
+                continue
+            for x, y in zip(a["items"], b["items"]):
+                have = {p["area"] for p in x["prices"]}
+                x["prices"].extend(p for p in y["prices"] if p["area"] not in have)
+                if y.get("note") and not x.get("note"):
+                    x["note"] = y["note"]
+            for am in b["areas"]:
+                if am not in a["areas"]:
+                    a["areas"].append(am)
+            a["pages"][0] = min(a["pages"][0], b["pages"][0])
+            a["pages"][1] = max(a["pages"][1], b["pages"][1])
+            drop.add(j)
+            issues.append(f"[提示] {a['region']} p{b['pages'][0]}：同批材料分列两表"
+                          f"（{'/'.join(b['areas'])}），已按行并入主表")
+            break
+    if drop:
+        logic = [l for k, l in enumerate(logic) if k not in drop]
+
     # ---------- 4. 合并连续同类为章节
     sections = []
     for lt in logic:

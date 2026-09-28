@@ -18,6 +18,24 @@ files = sorted(glob.glob(os.path.join(DATA, "202*.json")))
 files = [f for f in files if not os.path.basename(f).startswith(("index", "official", "_manifest"))]
 print(f"共 {len(files)} 期 json")
 
+
+def count_disjoint(rows):
+    """同一 (名称,型号,单位) 的行，若存在两个地区集合互不相交 → 典型的「平行表未合并」特征。
+    （正常形态下同一材料的不同分区集合应是包含/相等关系，如"部分县无价"是子集。）"""
+    g = {}
+    for r in rows:
+        areas = frozenset(p["area"] for p in r.get("prices", []) if p.get("area"))
+        if not areas:
+            continue
+        k = (r.get("name", ""), r.get("spec", ""), r.get("unit", ""))
+        g.setdefault(k, set()).add(areas)
+    n = 0
+    for k, ss in g.items():
+        ss = list(ss)
+        if any(ss[i].isdisjoint(ss[j]) for i in range(len(ss)) for j in range(i + 1, len(ss))):
+            n += 1
+    return n
+
 bad_a = []          # A: 伪地区列（仅两种真伪列形态）
 for f in files:
     d = json.load(open(f, encoding="utf-8"))
@@ -91,5 +109,40 @@ for kw in ("2024年第3期", "2024年第4期", "2025年第1期", "2025年第2期
         print(f"    {kw} (无海西material或无该期)")
         continue
     print(f"    {kw} areas={s.get('areas', [])}")
+
+print("\n[E] 平行双表配对回归（同一材料的多个行段，地区集合必须一致）:")
+hanan = []
+for f in files:
+    d = json.load(open(f, encoding="utf-8"))
+    for s in d["sections"]:
+        if s["region"].replace("地区", "") != "黄南" or s["kind"] != "material":
+            continue
+        nbad = count_disjoint(s["rows"])
+        ua = sorted({p["area"] for r in s["rows"] for p in r.get("prices", []) if p.get("area")})
+        hanan.append((os.path.basename(f), len(s["rows"]), nbad, ",".join(ua)))
+bad_e = [x for x in hanan if x[2] > 0]
+if bad_e:
+    print(f"    !! {len(bad_e)} 期黄南 material 存在「同材料地区集合不一致」（拆分未合并）:")
+    for b, n, nd, _ in bad_e:
+        print(f"      {b} 行{n} 异常材料 {nd} 项")
+else:
+    print(f"    {len(hanan)} 期黄南 material 全部通过 ✓（同一材料地区集合唯一）")
+    for b, n, nd, areas in hanan[-3:]:
+        print(f"      {b} 行{n} 列={areas}")
+
+print("\n[F] 全期全地区扫描：同材料行段地区集合不一致（平行表未合并的通用特征）:")
+allbad = []
+for f in files:
+    d = json.load(open(f, encoding="utf-8"))
+    for s in d["sections"]:
+        nd = count_disjoint(s["rows"])
+        if nd >= 1:
+            allbad.append((d["meta"]["period"], s["region"], s["kind"], len(s["rows"]), nd))
+if allbad:
+    print(f"    需甄别 {len(allbad)} 个 section:")
+    for per, reg, kind, n, nd in allbad[:20]:
+        print(f"      {per} {reg} {kind} 行{n} 异常{nd}")
+else:
+    print("    无 ✓")
 
 print("\n=== DONE ===")
