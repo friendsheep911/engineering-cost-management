@@ -182,9 +182,11 @@
   }
 
   function matPeriods(mid) {
-    var s = T.series[mid] || {}, set = {};
-    for (var aid in s) if (chosen[aid]) s[aid].forEach(function (x) { set[x[0]] = 1; });
-    return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+    // 统一横轴：始终覆盖全部期次（2020年第1期 至 最新一期），
+    // 材料缺失的期在图表中留空、明细表中显示「—」，保证不同材料/地区的时间轴可比
+    var all = [];
+    for (var i = 0; i < T.periods.length; i++) all.push(i);
+    return all;
   }
 
   function renderChart() {
