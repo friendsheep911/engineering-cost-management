@@ -5,6 +5,9 @@ __pycache__/
 # OCR 逐页缓存（体积大，可由 ocr_extract.py 自动重建）
 data/_ocr_cache/
 
+# Excel 导出产物（由 tools/export_issue_xlsx.py 生成，可随时重建）
+exports/
+
 # 临时与备份
 tmp/
 *.bak
