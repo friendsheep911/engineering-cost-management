@@ -55,6 +55,67 @@ def norm_area(raw):
     return a if a in KNOWN_AREAS else None
 
 
+# ---------------------------------------------------------------- 材料归一
+# 同一材料在各期的写法差异（实测来源）：
+#   ① 全角/半角：＃/# 、（）/() 、㎜/mm 、$ /Φ（Φ 误识为 $）
+#   ② 空格：P·C 42.5 与 P·C42.5
+#   ③ 水泥代号：P·O 被字体映射错成 P·Q；P.O/P.0；P·IⅡ/P·Ⅱ；52.5#（袋）多余括号
+#   ④ 钢筋名称：带肋钢筋 / 钢筋（圆钢） 是 2021-4~2023 期间对"热轧带肋钢筋 /
+#      热轧光圆钢筋"的另一种写法（同材料不同期不同名）
+#   ⑤ 名称错位：分组标题丢失时规格行继承了上一行名称（如"普通硅酸盐水泥 HRB400Φ10mm"）
+# 归一目标：让同一材料在时间轴上拼成一条连续序列（水泥按 强度+包装 归并）。
+_CEMENT_RE = re.compile(r"(硅酸盐水泥|抗硫水泥|膨胀水泥|道路水泥)")
+
+def norm_mat(name, spec):
+    """→ (name_key, spec_key, note)：材料名与规格的归一化键。"""
+    n = (name or "").strip().replace("（", "(").replace("）", ")")
+    s = (spec or "").strip()
+    # ① 全角→半角、去空格、单位与符号归一
+    s = (s.replace("＃", "#").replace("（", "(").replace("）", ")")
+          .replace("㎜", "mm").replace("$", "Φ"))
+    n = n.replace("＃", "#")
+    s = re.sub(r"\s+", "", s)
+    s = re.sub(r"(\d)~(\d)", r"\1-\2", s)          # 10~20mm → 10-20mm
+    s = re.sub(r"^(\d)#?$", r"\1", s)               # 光杆强度值
+    # 名称中剥掉包装后缀（抗硫水泥（散）→ 抗硫水泥）
+    m = re.search(r"\((散|袋)\)", n)
+    if m:
+        n = (n[:m.start()] + n[m.end():]).strip()
+
+    # ⑤ 名称错位纠正（规格代号与名称矛盾时以规格为准，双保险，数据层已有同名修正）
+    if re.search(r"HRB\s*400", s, re.I) and not any(k in n for k in ("钢筋", "盘条", "圆钢")):
+        n = "热轧带肋钢筋"
+    elif re.search(r"HPB\s*300", s, re.I) and not any(k in n for k in ("钢筋", "盘条", "圆钢", "镀锌")):
+        n = "热轧光圆钢筋"
+    elif "普通硅酸盐水泥" in n and ("Ⅱ" in s or "II" in s.upper()):
+        n = "硅酸盐水泥"        # P·Ⅱ/ P·IⅡ 属硅酸盐水泥，非普通硅酸盐
+
+    # ④ 钢筋名称跨期写法归一（仅当规格能佐证时）
+    if n == "钢筋(圆钢)":
+        n = "圆钢" if "综合" in s else "热轧光圆钢筋"
+    elif n == "带肋钢筋":
+        if re.search(r"HRB\s*400", s, re.I) or "综合" in s and "Q235" not in s:
+            n = "热轧带肋钢筋"
+        # 其余（Q235B、钢管规格等）疑似组名继承错误，保持原样不并入钢筋序列
+
+    # ③ 水泥类：键 = (名称, 强度, 包装)，忽略代号写法差异
+    if _CEMENT_RE.search(n):
+        pack = None
+        mp = re.search(r"\((散|袋)\)", s)
+        if mp:
+            pack = mp.group(1)
+        elif "散" in s:
+            pack = "散"
+        elif "袋" in s:
+            pack = "袋"
+        mg = re.search(r"(32\.5|42\.5|52\.5|62\.5)", s)
+        grade = mg.group(1) if mg else None
+        spec_key = (grade or "") + ("#(" + pack + ")" if pack else ("#" if grade else ""))
+        return n, spec_key, None
+
+    return n, s, None
+
+
 def main():
     # 1) 收集期次文件，按发布日期排序
     issues = []
@@ -89,10 +150,14 @@ def main():
     series = {}                    # mid -> {areaIdx: [[pIdx, num], ...]}
 
     def mid_of(kind, name, spec, unit):
-        key = (kind, name, spec, unit)
+        nn, ss, _ = norm_mat(name, spec)
+        u = (unit or "").strip()
+        if _CEMENT_RE.search(nn):
+            u = "t"   # 水泥类计价单位恒为吨；OCR 期单位列丢失（unit=''）按 t 归并
+        key = (kind, nn, ss, u)
         if key not in mat_ids:
             mat_ids[key] = len(mats)
-            mats.append([kind, name, spec, unit])
+            mats.append([kind, nn, ss, u])
             series[mat_ids[key]] = {}
         return mat_ids[key]
 
