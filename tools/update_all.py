@@ -95,8 +95,12 @@ def main():
     save_manifest(man)
     print(f"完成：成功 {ok} / {len(todo)}。")
 
-    # 有新数据时重建趋势索引
+    # 有新数据时：抽取园林绿化苗木指导价（协会附件，各期独立表）→ 重建趋势索引
     if ok:
+        print("抽取园林绿化苗木行业指导价…")
+        r = subprocess.run([sys.executable, str(HERE / "extract_seedlings.py")])
+        if r.returncode != 0:
+            print("[警告] 苗木指导价抽取失败，可手动运行 tools/extract_seedlings.py")
         print("重建历史趋势索引…")
         r = subprocess.run([sys.executable, str(HERE / "build_trends.py")])
         if r.returncode != 0:

@@ -31,9 +31,10 @@ KIND_CN = {
     "mortar": "干混砂浆市场参考价",
     "labor": "建设工程劳务市场信息指导价",
     "machine": "施工机械台班市场租赁价",
+    "seedling": "园林绿化苗木行业指导价",
 }
-KIND_ORDER = ["material", "mortar", "labor", "machine"]
-KIND_TAG = {"material": "材料", "mortar": "干混砂浆", "labor": "劳务", "machine": "机械台班"}
+KIND_ORDER = ["material", "mortar", "labor", "machine", "seedling"]
+KIND_TAG = {"material": "材料", "mortar": "干混砂浆", "labor": "劳务", "machine": "机械台班", "seedling": "苗木"}
 
 # ---------- 样式 ----------
 F_TITLE = Font(name="微软雅黑", size=14, bold=True, color="1F3864")
@@ -215,7 +216,8 @@ def sheet_long(wb, doc, issue):
 def sheet_region(wb, doc, issue, region, secs):
     ws = wb.create_sheet(region)
     meta = doc["meta"]
-    ws["A1"] = f'{region}地区 信息价（{meta.get("period")}　{meta.get("issue")}）'
+    reg_disp = region if region.endswith(("协会", "市", "州")) else region + "地区"
+    ws["A1"] = f'{reg_disp} 信息价（{meta.get("period")}　{meta.get("issue")}）'
     ws["A1"].font = F_TITLE
     ws["A2"] = f'源文件 {meta.get("sourceFile")}　数据抽取 {meta.get("extractedAt")}'
     ws["A2"].font = F_SUB

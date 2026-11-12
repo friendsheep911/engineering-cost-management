@@ -177,7 +177,11 @@ def main():
                         continue
                     area = norm_area(p["area"])
                     if area is None:
-                        continue
+                        # 苗木指导价（kind=seedling）无地区维度，area 原样保留
+                        if s.get("kind") == "seedling" and (p.get("area") or "").strip():
+                            area = p["area"].strip()
+                        else:
+                            continue
                     mid = mid_of(kind, r.get("name", ""), r.get("spec", ""), r.get("unit", ""))
                     aid = aid_of(area)
                     slot = series[mid].setdefault(aid, [])

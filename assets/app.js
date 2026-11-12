@@ -11,10 +11,11 @@
     material: '材料指导价',
     mortar: '干混砂浆',
     green: '绿色建材',
+    seedling: '园林绿化苗木',
     labor: '劳务价格',
     machine: '机械台班'
   };
-  var KIND_ORDER = ['material', 'mortar', 'green', 'labor', 'machine'];
+  var KIND_ORDER = ['material', 'mortar', 'green', 'seedling', 'labor', 'machine'];
 
   var state = {
     issueKey: null,
@@ -109,6 +110,7 @@
     material: { name: '材料名称', spec: '型号规格' },
     mortar: { name: '材料名称', spec: '强度等级' },
     green: { name: '材料名称', spec: '型号规格' },
+    seedling: { name: '苗木品种', spec: '规格' },
     labor: { name: '工种名称', spec: null },
     machine: { name: '机械名称', spec: '型号规格' }
   };
