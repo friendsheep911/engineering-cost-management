@@ -145,4 +145,6 @@ if allbad:
 else:
     print("    无 ✓")
 
-print("\n=== DONE ===")
+fail = bool(bad_a or bad_e or allbad)   # A/E/F 为硬门禁；B/C/D 仅信息性
+print(f"\n=== DONE {'FAIL' if fail else 'PASS'} ===")
+sys.exit(1 if fail else 0)

@@ -1,0 +1,47 @@
+name: 信息价自动更新
+
+on:
+  schedule:
+    # UTC 03:00 = 北京 11:00；每月 2 日、17 日各查一次（双月刊，发布后最迟半月内入库）
+    - cron: "0 3 2,17 * *"
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/workflows/update.yml"
+      - "tools/ci_update.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: info-price-update
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: pip install pymupdf openpyxl
+
+      - name: 检查官网新期并入库
+        run: python tools/ci_update.py
+
+      - name: 提交推送
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "无数据变更，跳过提交"
+          else
+            git commit -m "ci: 自动入库新一期信息价 $(date -u +%Y-%m-%d)"
+            git push
+          fi
