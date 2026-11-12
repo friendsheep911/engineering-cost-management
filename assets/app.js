@@ -23,8 +23,12 @@
     kind: 'all',
     mode: 'incl',       // incl | excl | both
     q: '',
-    collapse: false
+    collapse: false,
+    favoriteOnly: false
   };
+
+  var FAVORITES_KEY = 'qh_cost_favorites_v1';
+  var favorites = loadFavorites();
 
   var index = window.__ISSUE_INDEX__ || { issues: [] };
   var issues = (index.issues || []).slice().sort(function (a, b) {
@@ -51,6 +55,20 @@
     var out = [], seen = {};
     arr.forEach(function (x) { if (x && !seen[x]) { seen[x] = 1; out.push(x); } });
     return out;
+  }
+  function loadFavorites() {
+    try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function saveFavorites() {
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch (e) { /* ignore */ }
+  }
+  function favoriteKey(section, row) {
+    return [section.kind || '', row.name || '', row.spec || '', row.unit || ''].join('|');
+  }
+  function updateFavoriteCount() {
+    var n = Object.keys(favorites).length;
+    if (el('favoriteCount')) el('favoriteCount').textContent = n;
   }
 
   /* ------------------------------------------------------------ 数据加载 */
@@ -140,9 +158,13 @@
   }
 
   function filterRows(section) {
-    if (!state.q) return section.rows;
+    var rows = section.rows || [];
+    if (state.favoriteOnly) {
+      rows = rows.filter(function (r) { return !!favorites[favoriteKey(section, r)]; });
+    }
+    if (!state.q) return rows;
     var q = state.q.toLowerCase();
-    return section.rows.filter(function (r) {
+    return rows.filter(function (r) {
       return ((r.name || '') + ' ' + (r.spec || '') + ' ' + (r.note || '')).toLowerCase().indexOf(q) >= 0;
     });
   }
@@ -213,6 +235,7 @@
     wrap.className = 'tablewrap';
 
     var html = ['<table><thead><tr>',
+      '<th class="favcol">收藏</th>',
       '<th class="idx">序号</th>',
       '<th>' + esc(meta.name) + '</th>'];
     if (meta.spec) html.push('<th>' + esc(meta.spec) + '</th>');
@@ -220,7 +243,7 @@
     cols.forEach(function (c) { html.push('<th class="num">' + esc(c.label) + '</th>'); });
     html.push('<th>备注</th></tr></thead><tbody>');
 
-    var baseCols = 3 + (meta.spec ? 1 : 0) + 1;   // 序号 + 名称 + (规格) + 单位 + 备注
+    var baseCols = 4 + (meta.spec ? 1 : 0) + 1;   // 收藏 + 序号 + 名称 + (规格) + 单位 + 备注
 
     var lastGroup = null, counter = 0;
     rows.forEach(function (r) {
@@ -233,6 +256,10 @@
       }
       counter++;
       html.push('<tr>');
+      var fk = favoriteKey(section, r);
+      html.push('<td class="favcol"><button class="fav-btn' + (favorites[fk] ? ' on' : '') +
+        '" data-fav="' + encodeURIComponent(fk) + '" title="收藏常用材料">' +
+        (favorites[fk] ? '★' : '☆') + '</button></td>');
       html.push('<td class="idx">' + counter + '</td>');
       html.push('<td class="name">' + hi(r.name) + '</td>');
       if (meta.spec) html.push('<td class="spec">' + hi(r.spec) + '</td>');
@@ -257,6 +284,13 @@
 
     // 分组折叠交互
     wrap.addEventListener('click', function (e) {
+      var fav = e.target.closest ? e.target.closest('.fav-btn') : null;
+      if (fav) {
+        var key = decodeURIComponent(fav.getAttribute('data-fav'));
+        if (favorites[key]) delete favorites[key]; else favorites[key] = true;
+        saveFavorites(); updateFavoriteCount(); render();
+        return;
+      }
       var tr = e.target.closest ? e.target.closest('tr.group-row') : null;
       if (!tr) return;
       tr.classList.toggle('collapsed');
@@ -359,6 +393,14 @@
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
   }
+  function exportExcel() {
+    if (!state.issueKey) return;
+    var file = '青海工程造价管理信息_' + state.issueKey + '.xlsx';
+    var a = document.createElement('a');
+    a.href = 'exports/' + encodeURIComponent(file);
+    a.download = file;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
   function csvCell(v) {
     var s = String(v == null ? '' : v);
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -428,8 +470,14 @@
         }
       });
     });
+    el('favoriteOnly').addEventListener('change', function (e) {
+      state.favoriteOnly = e.target.checked;
+      render();
+    });
     el('btnExport').onclick = exportCSV;
+    el('btnExcel').onclick = exportExcel;
     el('btnPrint').onclick = function () { window.print(); };
+    updateFavoriteCount();
   }
 
   document.addEventListener('DOMContentLoaded', function () {

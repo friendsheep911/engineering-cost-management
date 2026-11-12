@@ -1,0 +1,6 @@
+.git
+database/*.sqlite
+data/_ocr_cache
+_raw
+tmp
+*.bak

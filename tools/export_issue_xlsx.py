@@ -306,12 +306,11 @@ def sheet_region(wb, doc, issue, region, secs):
 
 
 # ================= main =================
-def main():
+def export_one(issue):
     issues = list_issues()
-    issue = sys.argv[1] if len(sys.argv) > 1 else issues[-1]
     if issue not in issues:
         print("期次不存在:", issue, "\n可选:", ", ".join(issues[-6:]))
-        sys.exit(1)
+        raise ValueError(issue)
     doc = load(issue)
     try:
         os.makedirs(OUT_DIR, exist_ok=True)
@@ -353,6 +352,14 @@ def main():
     print(f'  期次 {issue} | sections {stats["n_sec"]} | 汇总行 {stats["n_rows"]} | 长表记录 {n_long}')
     print("  地区:", "、".join(stats["regions"]))
     return out
+
+
+def main():
+    issues = list_issues()
+    args = sys.argv[1:]
+    targets = issues if "--all" in args else [next((x for x in args if not x.startswith("-")), issues[-1])]
+    for issue in targets:
+        export_one(issue)
 
 
 if __name__ == "__main__":

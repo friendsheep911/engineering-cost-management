@@ -1,0 +1,9 @@
+name: qinghai-info-price
+
+services:
+  info-price:
+    build: .
+    container_name: qinghai-info-price
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

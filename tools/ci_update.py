@@ -236,6 +236,9 @@ def main():
             if ok and run([sys.executable, str(HERE / "build_trends.py")]) != 0:
                 print("[失败] 趋势重建失败")
                 ok = False
+            if ok and run([sys.executable, str(HERE / "export_issue_xlsx.py"), issue]) != 0:
+                print("[失败] Excel 导出失败")
+                ok = False
             if ok and run([sys.executable, str(HERE / "_final_check.py")]) != 0:
                 print("[失败] 终检未通过")
                 ok = False

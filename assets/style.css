@@ -136,6 +136,9 @@ td.spec{color:var(--txt-2)}
 td.unit{color:var(--txt-2);white-space:nowrap}
 td.note{color:var(--txt-3);font-size:11.5px;max-width:260px}
 .idx{color:var(--txt-3);font-family:var(--mono);font-size:11.5px;text-align:right;white-space:nowrap}
+.favcol{width:42px;text-align:center!important;padding-left:6px!important;padding-right:6px!important}
+.fav-btn{border:0;background:transparent;color:#aab4c0;font-size:19px;line-height:1;cursor:pointer;padding:2px}
+.fav-btn:hover,.fav-btn.on{color:#e3a008}
 tr.group-row td{
   background:#f1f5fa;font-weight:600;color:var(--brand-d);font-size:12.4px;
   padding:7px 12px;border-bottom:1px solid var(--line-strong);cursor:pointer;
@@ -217,3 +220,9 @@ mark{background:#fff3b0;color:inherit;border-radius:2px;padding:0 1px}
 td.up, .up small{color:var(--accent)}
 td.down, .down small{color:var(--ok)}
 td.up small, td.down small{display:block;font-size:10.5px;font-family:var(--txt);line-height:1.3}
+
+/* ================= 数据库检索 ================= */
+.db-search{max-width:620px}
+.db-results{max-height:calc(100vh - 210px)}
+.db-results td{white-space:nowrap}
+.db-results td.name,.db-results td.note{white-space:normal;min-width:160px}

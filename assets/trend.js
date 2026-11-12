@@ -32,20 +32,28 @@
   /* ------------------------------------------------------------ 视图切换 */
   function setView(v) {
     var trend = v === 'trend';
+    var database = v === 'database';
+    var issue = !trend && !database;
     [].forEach.call(el('viewTabs').children, function (b) {
       b.classList.toggle('on', b.getAttribute('data-view') === v);
     });
     el('trendBar').hidden = !trend;
     el('trendView').hidden = !trend;
-    el('content').hidden = trend;
-    el('issueField').style.display = trend ? 'none' : '';
-    el('btnExport').style.display = trend ? 'none' : '';
-    el('btnPrint').style.display = trend ? 'none' : '';
-    el('controlbar') && (el('controlbar').style.display = trend ? 'none' : '');
+    el('dbBar').hidden = !database;
+    el('dbView').hidden = !database;
+    el('content').hidden = !issue;
+    el('issueField').style.display = issue ? '' : 'none';
+    el('btnExport').style.display = issue ? '' : 'none';
+    el('btnExcel').style.display = issue ? '' : 'none';
+    el('btnPrint').style.display = issue ? '' : 'none';
+    el('controlbar') && (el('controlbar').style.display = issue ? '' : 'none');
     if (trend) {
       var nm = location.hash.match(/n=(\d+)/);
       try { history.replaceState(null, '', nm ? '#v=trend&n=' + nm[1] : '#v=trend'); } catch (e) {}
       ensureTrends();
+    } else if (database) {
+      try { history.replaceState(null, '', '#v=database'); } catch (e) {}
+      if (window.DatabaseView) window.DatabaseView.activate();
     } else {
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
     }
@@ -334,5 +342,6 @@
     });
 
     if ((location.hash || '').indexOf('v=trend') >= 0) setView('trend');
+    else if ((location.hash || '').indexOf('v=database') >= 0) setView('database');
   });
 })();
