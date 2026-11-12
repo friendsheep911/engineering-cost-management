@@ -37,6 +37,11 @@ LIST_PAGES = [
 ARTICLE_RE = re.compile(
     r'href="(https?://zjt\.qinghai\.gov\.cn/(?:xwdt/tzgg|zwfw/zjxx)/20\d{4}/t20\d+_\d+\.html)"')
 PDF_RE = re.compile(r'(?:href|src)="([^"]+?P\d+\.pdf)"')
+DIRECT_PDF_RE = re.compile(
+    r'<li[^>]*>.*?<a[^>]+href="([^"]+?P\d+\.pdf)"[^>]*>\s*(.*?)\s*</a>'
+    r'.*?<span[^>]*class="rt"[^>]*>\s*\[(20\d{2}-\d{2}-\d{2})\]',
+    re.DOTALL | re.IGNORECASE,
+)
 ISSUE_RE = re.compile(r"(20\d{2})\s*年\s*第\s*([0-9一二三四五六七八九十]+)\s*期")
 DATE_RE = re.compile(r"20\d{2}-\d{2}-\d{2}")
 CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
@@ -80,6 +85,21 @@ def find_new_articles():
         except Exception as e:  # noqa: BLE001
             print(f"[警告] 列表页抓取失败 {lp}: {e}")
             continue
+        # 新版官网会把 PDF 直接挂在列表页，不再提供独立文章页。
+        for pm in DIRECT_PDF_RE.finditer(html):
+            pdf_url = urljoin_abs(lp, pm.group(1))
+            title = re.sub(r"<[^>]+>", "", pm.group(2)).strip()
+            if pdf_url in seen or "造价管理信息" not in title:
+                continue
+            seen.add(pdf_url)
+            issue = parse_issue(title)
+            if issue is None:
+                print(f"  [跳过] 无法识别期号：{title} | {pdf_url}")
+                continue
+            if issue in known:
+                print(f"  已入库（{issue}），跳过")
+                continue
+            out.append((lp, pdf_url, title, pm.group(3), issue))
         for m in ARTICLE_RE.finditer(html):
             aurl = m.group(1)
             if aurl in seen:
@@ -127,17 +147,22 @@ def parse_issue(title):
 
 
 def prev_rows_total(issue_key):
-    """取数据目录里最新一期（字典序最大的 <期>.json）的总行数，做量级安全阀。"""
-    best, best_rows = None, None
-    for f in DATA.glob("*.json"):
-        if f.name.startswith("_"):
+    """取当前期之前最新一期的总行数，做量级安全阀。"""
+    current = re.fullmatch(r"(20\d{2})年第(\d+)期", issue_key)
+    current_order = (int(current.group(1)), int(current.group(2))) if current else None
+    candidates = []
+    for f in DATA.glob("20*年第*期.json"):
+        m = re.fullmatch(r"(20\d{2})年第(\d+)期\.json", f.name)
+        if not m:
             continue
-        if best is None or f.name > best:
-            best = f.name
-    if best is None:
+        order = (int(m.group(1)), int(m.group(2)))
+        if current_order is None or order < current_order:
+            candidates.append((order, f))
+    if not candidates:
         return None
-    d = json.loads((DATA / best).read_text(encoding="utf-8"))
-    return best, sum(len(s.get("rows", [])) for s in d.get("sections", []))
+    _, best = max(candidates, key=lambda item: item[0])
+    d = json.loads(best.read_text(encoding="utf-8"))
+    return best.name, sum(len(s.get("rows", [])) for s in d.get("sections", []))
 
 
 def run(cmd):
