@@ -1,6 +1,6 @@
 {
  "source": "https://zjt.qinghai.gov.cn/ 站内检索「青海工程造价管理信息」",
- "count": 40,
+ "count": 41,
  "issues": [
   {
    "issue": "2020年第1期",
@@ -241,6 +241,12 @@
    "published": "2026-09-02 11:29",
    "page": "https://zjt.qinghai.gov.cn/zwfw/zjxx/202609/P020260902619683658372.pdf",
    "attach": "https://zjt.qinghai.gov.cn/zwfw/zjxx/202609/P020260902619683658372.pdf"
+  },
+  {
+   "issue": "2026年第5期",
+   "published": "2026-11-05 00:00",
+   "page": "https://zjt.qinghai.gov.cn/xwdt/tzgg/",
+   "attach": "https://zjt.qinghai.gov.cn/xwdt/tzgg/202611/P020261105338037883485.pdf"
   }
  ]
 }
