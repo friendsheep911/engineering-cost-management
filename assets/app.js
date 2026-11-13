@@ -321,7 +321,7 @@
     });
   }
   function syncHash() {
-    if (/v=trend/.test(location.hash)) return;   // 趋势视图有自己的 hash，不覆盖
+    if (/v=(trend|database|projects)/.test(location.hash)) return;   // 其他视图有自己的 hash，不覆盖
     var h = '#r=' + encodeURIComponent(state.region) +
             '&k=' + encodeURIComponent(state.kind) + '&m=' + state.mode;
     if (state.q) h += '&q=' + encodeURIComponent(state.q);

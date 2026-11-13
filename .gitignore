@@ -9,6 +9,8 @@ data/_ocr_cache/
 exports/*
 !exports/*.xlsx
 database/*.sqlite
+storage/*
+!storage/.gitkeep
 
 # 临时与备份
 tmp/

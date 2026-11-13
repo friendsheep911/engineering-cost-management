@@ -22,6 +22,7 @@
       <button data-view="issue" class="on">当期查询</button>
       <button data-view="trend">历史趋势</button>
       <button data-view="database">数据库检索</button>
+      <button data-view="projects">项目调差</button>
     </div>
     <label class="field" id="issueField">
       <span>期数</span>
@@ -59,6 +60,15 @@
   </div>
 </section>
 
+<section class="controlbar" id="projectBar" hidden>
+  <div class="row tools project-tools">
+    <button id="btnNewProject" class="btn">新建项目</button>
+    <a class="btn ghost link-btn" href="/api/projects/template.xlsx">下载导入模板</a>
+    <button id="btnRefreshProjects" class="btn ghost">刷新</button>
+    <div class="stat" id="projectStat"></div>
+  </div>
+</section>
+
 <section class="controlbar" id="dbBar" hidden>
   <div class="row tools">
     <div class="search db-search">
@@ -93,6 +103,36 @@
   <div class="placeholder">数据库检索用于 NAS / Docker 版本，可跨全部期次进行全文检索。</div>
 </main>
 
+<main id="projectView" class="content project-view" hidden>
+  <aside class="project-list-panel">
+    <div class="panel-title"><h2>项目</h2><span id="projectCount">0</span></div>
+    <div id="projectList" class="project-list"><div class="placeholder small">正在读取项目…</div></div>
+  </aside>
+  <section id="projectWorkspace" class="project-workspace">
+    <div class="empty-project">
+      <h2>项目材料调差</h2>
+      <p>新建项目后导入 Excel 材料清单，系统会自动匹配基期与当前期信息价并计算调差。</p>
+      <button class="btn" data-new-project>新建第一个项目</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="projectDialog" class="project-dialog">
+  <form method="dialog" id="projectForm">
+    <div class="dialog-head"><h2>新建调差项目</h2><button value="cancel" class="dialog-close" aria-label="关闭">×</button></div>
+    <div class="form-grid">
+      <label class="full"><span>项目名称</span><input id="projectName" required placeholder="例如：某水库除险加固工程"></label>
+      <label><span>地区</span><select id="projectRegion"></select></label>
+      <label><span>计价区域</span><select id="projectArea"></select></label>
+      <label><span>基期</span><select id="projectBaseIssue" required></select></label>
+      <label><span>当前期</span><select id="projectCurrentIssue" required></select></label>
+      <label><span>价格口径</span><select id="projectTaxMode"><option value="incl">含税价</option><option value="excl">除税价</option></select></label>
+      <label><span>风险阈值</span><div class="input-suffix"><input id="projectThreshold" type="number" min="0" step="0.1" value="5"><b>%</b></div></label>
+    </div>
+    <div class="dialog-actions"><button value="cancel" class="btn ghost">取消</button><button id="btnCreateProject" value="default" class="btn">创建项目</button></div>
+  </form>
+</dialog>
+
 <footer class="foot">
   <span id="footMeta"></span>
   <span class="foot-hint">数据由 PDF 自动抽取，仅供查询参考；正式计价请以原刊及其勘误为准。</span>
@@ -103,5 +143,6 @@
 <script src="assets/app.js"></script>
 <script src="assets/trend.js"></script>
 <script src="assets/database.js"></script>
+<script src="assets/projects.js"></script>
 </body>
 </html>

@@ -33,7 +33,8 @@
   function setView(v) {
     var trend = v === 'trend';
     var database = v === 'database';
-    var issue = !trend && !database;
+    var projects = v === 'projects';
+    var issue = !trend && !database && !projects;
     [].forEach.call(el('viewTabs').children, function (b) {
       b.classList.toggle('on', b.getAttribute('data-view') === v);
     });
@@ -41,6 +42,8 @@
     el('trendView').hidden = !trend;
     el('dbBar').hidden = !database;
     el('dbView').hidden = !database;
+    el('projectBar').hidden = !projects;
+    el('projectView').hidden = !projects;
     el('content').hidden = !issue;
     el('issueField').style.display = issue ? '' : 'none';
     el('btnExport').style.display = issue ? '' : 'none';
@@ -54,6 +57,9 @@
     } else if (database) {
       try { history.replaceState(null, '', '#v=database'); } catch (e) {}
       if (window.DatabaseView) window.DatabaseView.activate();
+    } else if (projects) {
+      try { history.replaceState(null, '', '#v=projects'); } catch (e) {}
+      if (window.ProjectView) window.ProjectView.activate();
     } else {
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
     }
@@ -343,5 +349,6 @@
 
     if ((location.hash || '').indexOf('v=trend') >= 0) setView('trend');
     else if ((location.hash || '').indexOf('v=database') >= 0) setView('database');
+    else if ((location.hash || '').indexOf('v=projects') >= 0) setView('projects');
   });
 })();

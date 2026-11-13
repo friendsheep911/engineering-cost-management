@@ -6,4 +6,6 @@ services:
     container_name: qinghai-info-price
     ports:
       - "8080:8080"
+    volumes:
+      - ./storage:/app/storage
     restart: unless-stopped
