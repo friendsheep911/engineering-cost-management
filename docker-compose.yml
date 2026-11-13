@@ -5,7 +5,9 @@ services:
     build: .
     container_name: qinghai-info-price
     ports:
-      - "8080:8080"
+      - "${INFO_PRICE_PORT:-8080}:8080"
+    environment:
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
     volumes:
       - ./storage:/app/storage
     restart: unless-stopped

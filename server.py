@@ -17,10 +17,18 @@ PROJECTS = ProjectAPI(DB, PROJECT_DB)
 
 
 class Handler(SimpleHTTPRequestHandler):
+    def send_cors(self):
+        origin = self.headers.get("Origin", "")
+        allowed = [x.strip() for x in os.environ.get("CORS_ORIGINS", "").split(",") if x.strip()]
+        if origin and origin in allowed:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
     def send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_cors()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -86,10 +94,19 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"error": "接口不存在"}, 404)
         return self.send_json({"ok": PROJECTS.delete(int(match.group(1)))})
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_cors()
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.end_headers()
+
     def send_file(self, body, filename):
         from urllib.parse import quote
         self.send_response(200)
         self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.send_cors()
         self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

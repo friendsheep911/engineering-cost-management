@@ -5,6 +5,10 @@
   var options = { issues: [], regions: [], area_regions: {} };
   var projects = [];
   var selectedId = null;
+  var apiBase = window.__PROJECT_API_BASE__ || '';
+  if (!apiBase && location.port === '8088') {
+    apiBase = location.protocol + '//' + location.hostname + ':8091';
+  }
 
   function el(id) { return document.getElementById(id); }
   function esc(value) {
@@ -17,8 +21,9 @@
   function pct(value) { return value == null ? '—' : (value > 0 ? '+' : '') + Number(value).toFixed(2) + '%'; }
   function dateText(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—'; }
 
+  function apiUrl(path) { return apiBase + path; }
   async function api(url, config) {
-    var response = await fetch(url, config);
+    var response = await fetch(apiUrl(url), config);
     var type = response.headers.get('content-type') || '';
     var data = type.indexOf('application/json') >= 0 ? await response.json() : null;
     if (!response.ok) throw new Error((data && data.error) || '请求失败：' + response.status);
@@ -125,7 +130,7 @@
     el('projectWorkspace').innerHTML =
       '<div class="project-head"><div><h2>' + esc(p.name) + '</h2><p>创建：' + esc(dateText(p.created_at)) + '　更新：' + esc(dateText(p.updated_at)) +
       '</p></div><div class="project-actions"><button class="btn ghost danger" id="btnDeleteProject">删除项目</button>' +
-      '<a class="btn" href="/api/projects/' + p.id + '/export.xlsx">导出 Excel</a></div></div>' +
+      '<a class="btn" href="' + esc(apiUrl('/api/projects/' + p.id + '/export.xlsx')) + '">导出 Excel</a></div></div>' +
       '<div class="summary-cards"><div><span>清单行</span><strong>' + s.total + '</strong></div><div><span>已匹配</span><strong>' + s.matched +
       '</strong></div><div><span>待复核 / 未匹配</span><strong>' + s.review + ' / ' + s.unmatched + '</strong></div><div><span>基期合价</span><strong>' +
       fmt(s.base_amount) + '</strong></div><div><span>当前合价</span><strong>' + fmt(s.current_amount) + '</strong></div><div class="difference-card"><span>调差金额</span><strong>' +
@@ -239,6 +244,7 @@
   async function activate() {
     if (ready) return;
     ready = true;
+    el('projectTemplateLink').href = apiUrl('/api/projects/template.xlsx');
     el('btnNewProject').onclick = showDialog;
     el('btnRefreshProjects').onclick = function () { loadProjects(true).catch(function (e) { setStat(e.message, true); }); };
     el('projectForm').addEventListener('submit', createProject);

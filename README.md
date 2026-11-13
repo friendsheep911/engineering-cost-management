@@ -133,3 +133,14 @@ NAS / Docker 版新增“项目调差”工作区，已形成以下闭环：
 ```bash
 docker compose up -d --build
 ```
+
+群晖 Web Station 混合部署时，静态网站继续由 `8088` 提供，项目 API 单独监听 `8091`：
+
+```bash
+INFO_PRICE_PORT=8091 \
+CORS_ORIGINS=http://NAS地址:8088,http://nas.friend911.top:8088 \
+docker compose up -d --build
+```
+
+网页从 `8088` 打开时会自动把项目调差请求发送到同一主机的 `8091`。其他部署方式可在页面加载前设置
+`window.__PROJECT_API_BASE__` 覆盖 API 地址。
